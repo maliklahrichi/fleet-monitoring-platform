@@ -1,53 +1,62 @@
+
 import json
 import random
+
 from confluent_kafka import Producer
+from faker import Faker
 
 BOOTSTRAP_SERVERS = "localhost:9092"
 TOPIC = "fleet_catalog"
 
-REGIONS = [
-    "Ile-de-France",
-    "Normandie",
-    "Bretagne",
-    "Grand Est",
-    "Auvergne-Rhône-Alpes"
-]
+REGIONS = ["Paris", "Lyon", "Marseille", "Lille", "Toulouse"]
+VEHICLE_TYPES = ["van", "truck", "refrigerated_truck", "motorbike"]
+PAYLOADS = [500, 1000, 1500, 3000]
 
-VEHICLE_TYPES = ["Van", "Truck", "Electric Van", "Heavy Carrier"]
+SEED = 42  # graine fixe → mêmes données à chaque exécution
 
 
-def generate_catalog():
-    producer = Producer({"bootstrap.servers": BOOTSTRAP_SERVERS})
+def build_catalog():
+    """Construit les 40 enregistrements du catalogue."""
+    rng = random.Random(SEED)
+    fake = Faker("fr_FR")
+    Faker.seed(SEED)
 
-    print(f"[*] Publishing 40 vehicles to compacted topic '{TOPIC}'...")
-
+    catalog = []
     for i in range(1, 41):
-        vehicle_id = f"V{i:04d}"
-
-        # Génération d'une plaque d'immatriculation française fictive (ex: AB-123-CD)
-        letters1 = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=2))
-        numbers = f"{random.randint(100, 999):03d}"
-        letters2 = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=2))
-        plate = f"{letters1}-{numbers}-{letters2}"
-
-        vehicle_data = {
+        vehicle_id = f"V{i:04d}"           # V0001 ... V0040
+        catalog.append({
             "vehicle_id": vehicle_id,
-            "plate": plate,
-            "vehicle_type": random.choice(VEHICLE_TYPES),
-            "home_region": REGIONS[(i - 1) % len(REGIONS)],  # Répartition équitable sur les 5 régions
-            "max_payload_kg": random.choice([1000, 1200, 2500, 3500])
-        }
+            "plate": fake.license_plate(),  # ex. "AB-123-CD"
+            "vehicle_type": rng.choice(VEHICLE_TYPES),
+            "home_region": REGIONS[(i - 1) % len(REGIONS)],  # 8 véhicules par région
+            "max_payload_kg": rng.choice(PAYLOADS),
+        })
+    return catalog
 
-        # Envoi dans Kafka avec vehicle_id comme clé (essentiel pour le nettoyage/compaction)
+
+
+def main():
+    producer = Producer({
+        "bootstrap.servers": BOOTSTRAP_SERVERS,
+        "enable.idempotence": True,   # PID + numéros de séquence → pas de doublons
+        "acks": "all",                # (imposé par l'idempotence, écrit pour être explicite)
+    })
+
+    for record in build_catalog():
         producer.produce(
             TOPIC,
-            key=vehicle_id,
-            value=json.dumps(vehicle_data)
+            key=record["vehicle_id"],          # la clé : indispensable pour la compaction
+            value=json.dumps(record),
         )
+        producer.poll(0)  # traite les callbacks de livraison au fil de l'eau
 
-    producer.flush()
-    print("[SUCCESS] Fleet catalog successfully published!")
+    # Attend que tous les messages soient confirmés avant de quitter
+    remaining = producer.flush(10)
+    if remaining:
+        print(f"{remaining} message(s) non confirmé(s) !")
+    else:
+        print("Catalogue publié : 40 véhicules.")
 
 
 if __name__ == "__main__":
-    generate_catalog()
+    main()
