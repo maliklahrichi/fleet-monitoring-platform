@@ -73,3 +73,29 @@ def publish_once(topic: str, key: str, value: str,
     publish(topic, key, value)
     print(f"Published to {topic} (key={key})")
     return True
+
+
+def consumer_lag(group: str, topic: str) -> dict[int, int]:
+    """Lag per partition of `group` on `topic`: end offset minus the group's committed offset.
+
+    If the group has never committed on a partition, the lag is counted from the start of the
+    partition. The consumer only reads offsets: it never joins the group and never commits.
+    """
+    from confluent_kafka import Consumer, TopicPartition
+
+    consumer = Consumer({
+        "bootstrap.servers": BOOTSTRAP_SERVERS,
+        "group.id": group,  # needed to read this group's committed offsets
+        "enable.auto.commit": False,
+    })
+    try:
+        partitions = list(consumer.list_topics(topic, timeout=10).topics[topic].partitions)
+        committed = consumer.committed([TopicPartition(topic, p) for p in partitions], timeout=10)
+        lag = {}
+        for tp in committed:
+            low, high = consumer.get_watermark_offsets(TopicPartition(topic, tp.partition), timeout=10)
+            position = tp.offset if tp.offset >= 0 else low  # negative = nothing committed yet
+            lag[tp.partition] = max(high - position, 0)
+        return lag
+    finally:
+        consumer.close()
