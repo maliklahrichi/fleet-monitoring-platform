@@ -4,11 +4,13 @@ fleet_daily_pipeline (part D.1): one run per day, for the logical date `ds` (YYY
 wait_for_files -> check_topics -> quality_job -> read_verdict
     read_verdict --passed--> report_job -> publish_report ----------\
     read_verdict --failed--> publish_quality_alert -----------------+-> join
+
+Every task can be re-run safely (idempotent): the Spark jobs overwrite their output files, and the
+two publishing tasks skip the publication when the same message is already in the topic.
 """
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -18,9 +20,10 @@ from airflow.operators.empty import EmptyOperator
 from airflow.sensors.python import PythonSensor
 from airflow.utils.trigger_rule import TriggerRule
 
+from kafka_helpers import BOOTSTRAP_SERVERS, publish_once
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
-BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 REQUIRED_TOPICS = [
     "vehicle_events", "fleet_catalog", "alerts",
     "region_kpis_1min", "vehicle_events_dlq", "daily_reports",
@@ -38,23 +41,6 @@ def _day_files_exist(ds: str, **_) -> bool:
     """Sensor condition: at least one Parquet file exists for the day."""
     folder = DATA_DIR / "parquet" / "events" / f"event_date={ds}"
     return folder.is_dir() and any(folder.rglob("*.parquet"))
-
-
-def _publish(topic: str, key: str, value: str) -> None:
-    """Publish one message and fail the task if Kafka does not confirm it."""
-    from confluent_kafka import Producer
-
-    errors = []
-
-    def on_delivery(err, _msg):
-        if err is not None:
-            errors.append(str(err))
-
-    producer = Producer({"bootstrap.servers": BOOTSTRAP_SERVERS, "enable.idempotence": True})
-    producer.produce(topic, key=key, value=value, on_delivery=on_delivery)
-    remaining = producer.flush(30)
-    if remaining or errors:
-        raise RuntimeError(f"Publishing to {topic} failed: {errors or 'timeout'}")
 
 
 @dag(
@@ -103,7 +89,9 @@ def fleet_daily_pipeline():
     @task
     def publish_report(ds=None):
         report = (DATA_DIR / "reports" / f"report_{ds}.json").read_text()
-        _publish("daily_reports", key=ds, value=report)
+        # Same date and same content already in the topic: nothing to do.
+        publish_once("daily_reports", key=ds, value=report,
+                     matches=lambda k, v: k == ds and v == report)
 
     @task
     def publish_quality_alert(ds=None):
@@ -115,7 +103,16 @@ def fleet_daily_pipeline():
             "event_time": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
             "details": {"date": ds, "reasons": verdict.get("reasons", [])},
         }
-        _publish("alerts", key="data_quality_failed", value=json.dumps(alert))
+
+        def same_alert(_key, value):
+            # event_time differs between runs, so the alert is recognised by its alert_id.
+            try:
+                return json.loads(value).get("alert_id") == alert["alert_id"]
+            except (ValueError, AttributeError):
+                return False
+
+        publish_once("alerts", key="data_quality_failed", value=json.dumps(alert),
+                     matches=same_alert)
 
     join = EmptyOperator(task_id="join", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
 
