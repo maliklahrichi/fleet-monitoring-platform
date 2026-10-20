@@ -33,8 +33,6 @@ try:
         print(f"Received alert from partition {msg.partition()} "
               f"at offset {msg.offset()}: {msg.value().decode('utf-8')}")
 
-        # Simulate handling/processing the alert
-
         # Manual commit
         try:
             # Commit the offset synchronously after handling
