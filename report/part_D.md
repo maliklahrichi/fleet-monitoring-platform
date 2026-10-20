@@ -55,9 +55,16 @@ could both see an empty topic. It is safe here because `max_active_runs=1` and a
 never runs concurrently with itself. A strict guarantee would need a transactional producer or a
 deduplicating consumer on `alert_id`.
 
-**Backfill of 7 days.** (To fill in once done.) Command:
-`airflow dags backfill -s 2026-10-12 -e 2026-10-18 fleet_daily_pipeline`, after creating a Parquet
-file for each day. Result to report: 7 runs, one report per date, no duplicate message per key.
+**Backfill of 7 days.** After creating one (empty) Parquet file per day, we ran
+`airflow dags backfill -s 2026-10-12 -e 2026-10-18 fleet_daily_pipeline`. Result: 7 runs (12 to
+18 October), 49 task instances succeeded, 7 skipped (`publish_quality_alert`, because the quality
+check passed every day and the branch took the report path) and 0 failed. `daily_reports` then
+held 8 messages, one per date (the 7 backfilled days plus the run of 19 October), each key
+exactly once. Running the same backfill again with `--reset-dagruns` re-executed every task:
+`daily_reports` still held 8 messages, and the 7 `publish_report` logs read `Skipped: a matching
+message is already in daily_reports`. Raw outputs: `report/screenshots/daily_reports_after_backfill.txt`,
+`report/screenshots/daily_reports_after_second_backfill.txt` and
+`report/screenshots/publish_report_skipped_logs.txt`.
 
 ## D.4 Sensor: `poke` versus `reschedule`
 
