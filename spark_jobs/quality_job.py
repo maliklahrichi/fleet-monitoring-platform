@@ -1,20 +1,4 @@
-"""
-Partie C.1 - Contrôle qualité d'une journée (porte de qualité lue par Airflow).
 
-Lit UNIQUEMENT la partition event_date=<date> des Parquet écrits par la Query 1, calcule
-3 mesures et écrit un verdict JSON (format de docs/contracts.md) :
-
-    data/quality/verdict_<date>.json
-    {"date": ..., "passed": true/false, "reasons": [...],
-     "metrics": {"rows": ..., "duplicate_event_ids": ..., "unknown_region_pct": ...}}
-
-Le job réussit (code de sortie 0) même quand le verdict est "failed" : un verdict négatif est
-un RÉSULTAT, pas une panne. C'est la tâche de branchement d'Airflow qui lit "passed" et choisit
-le chemin. Le job ne plante (code ≠ 0) que s'il ne peut pas produire de verdict.
-
-Lancement :
-  spark-submit spark_jobs/quality_job.py --date 2026-11-03
-"""
 import argparse
 import json
 from pathlib import Path

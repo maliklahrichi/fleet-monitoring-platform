@@ -1,39 +1,4 @@
-"""
-Partie C.3 - Étude du skew (clé déséquilibrée) et du salting.
 
-Contexte : avec --hot-vehicle, le simulateur envoie ~40 % du trafic avec la clé V0001.
-Quand on regroupe par vehicle_id, Spark envoie TOUTES les lignes d'une même clé à la MÊME
-tâche (shuffle par hash de la clé) : une tâche reçoit 40 % des données, les autres presque rien.
-Le stage d'agrégation dure aussi longtemps que cette tâche la plus lente.
-
-Agrégation étudiée : nombre d'event_id distincts par véhicule, calculé avec
-size(collect_set(event_id)) (l'ensemble des ids de chaque véhicule, puis sa taille).
-  - Pourquoi pas un simple count ? count/avg/max se pré-agrègent AVANT le shuffle
-    (agrégation partielle) : chaque tâche n'envoie qu'un petit compteur par clé, le skew
-    disparaît presque.
-  - Pourquoi pas countDistinct ? Spark le découpe déjà tout seul : il fait d'abord un shuffle
-    sur (vehicle_id, event_id), ce qui répartit V0001 sur toutes les tâches (voir explain()).
-  - collect_set ne se réduit pas : l'ensemble des ids de V0001 grossit avec les données et
-    finit en entier dans UNE tâche → le skew est bien visible (durée et volume lus).
-
-On compare 4 variantes, chacune lancée sous un "job group" visible dans le Spark UI :
-  1. baseline          (AQE désactivé)
-  2. baseline + AQE    (AQE activé seul)
-  3. salting           (AQE désactivé)
-  4. salting + AQE
-
-Salting en deux étapes :
-  étape 1 : groupBy(vehicle_id, salt) avec salt = hash(event_id) mod N
-            → la clé V0001 est découpée en N morceaux traités par N tâches ;
-  étape 2 : groupBy(vehicle_id) et somme des N résultats partiels (40 × N lignes : rapide).
-  Le sel est calculé à partir de event_id (et pas au hasard) : un même event_id tombe toujours
-  dans le même morceau, donc les N ensembles d'ids sont disjoints et la somme est exacte.
-
-Lancement (données produites avec le simulateur en --hot-vehicle) :
-  spark-submit spark_jobs/skew_study.py --date 2026-11-03 --repeat 20 --salt 8 --wait
-  --repeat N : duplique les données N fois (avec des event_id distincts) pour que les durées
-               soient mesurables ; --wait : garde le Spark UI ouvert à la fin (localhost:4040).
-"""
 import argparse
 import json
 import time

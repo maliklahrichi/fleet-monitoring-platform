@@ -1,19 +1,4 @@
-"""
-Partie C.2 - Rapport quotidien d'une journée.
 
-Lit UNIQUEMENT la partition event_date=<date>, puis calcule :
-  - par véhicule : events, mean/max speed, speeding events (> 120 km/h), harsh-braking events ;
-  - par région   : les mêmes indicateurs ;
-  - les 5 pires véhicules.
-Écrit data/reports/report_<date>.json (format de docs/contracts.md), publié ensuite par Airflow.
-
-Preuve du partition pruning : le plan physique (explain) est affiché ET enregistré dans
-data/reports/plan_<date>.txt. On y lit "PartitionFilters: [... (event_date = <date>)]" et
-"PartitionCount: 1" : Spark n'ouvre que le dossier du jour.
-
-Lancement :
-  spark-submit spark_jobs/report_job.py --date 2026-11-03
-"""
 import argparse
 import json
 import urllib.request
