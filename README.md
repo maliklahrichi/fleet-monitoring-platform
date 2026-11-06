@@ -1,4 +1,55 @@
-# Capstone project -- provided material
+# Real-Time Fleet Monitoring Platform
+
+Kafka (ingestion), Spark Structured Streaming and Spark batch (processing), Airflow (orchestration)
+for 40 simulated delivery vehicles. Everything below starts from `docker compose up`.
+
+## Run the platform
+Prerequisites: Docker, Python 3.10/3.11, Java 11/17 (check with `java -version`). On Windows, use WSL2.
+
+    docker compose up -d                                  # Kafka broker (KRaft) on localhost:9092
+    python3 -m venv .venv && source .venv/bin/activate
+    pip install -r requirements.txt                       # also provides spark-submit
+    python3 scripts/create_topics.py                      # creates the six topics
+    python3 producers/produce_vehicle_catalog.py          # publishes the vehicle catalog once
+
+Then, each in its own terminal (with the venv activated):
+
+    # 1. Streaming job (DLQ, point alerts, 1-min KPIs, 5-min sustained speeding)
+    spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 spark_jobs/streaming_job.py
+    # 2. Alerts notifier (Kafka consumer, manual commit)
+    python3 consumers/alerts-notifier.py
+    # 3. Telemetry simulator
+    python3 producers/produce_vehicle_events.py --rate 20
+
+Parquet output goes to `data/parquet/events/event_date=.../batch_id=...`, checkpoints to `checkpoints/`.
+
+## Batch jobs (Spark)
+    spark-submit spark_jobs/quality_job.py --date YYYY-MM-DD    # writes data/quality/verdict_<date>.json
+    spark-submit spark_jobs/report_job.py  --date YYYY-MM-DD    # writes the daily report JSON
+    spark-submit spark_jobs/skew_study.py  --date YYYY-MM-DD    # skew study (run the simulator with --hot-vehicle first)
+
+## Airflow (separate environment)
+    python3.11 -m venv .venv-airflow && source .venv-airflow/bin/activate
+    pip install "apache-airflow==2.9.3" confluent-kafka \
+      --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt"
+    export AIRFLOW__CORE__DAGS_FOLDER=$PWD/airflow_dags
+    airflow standalone                                          # UI on localhost:8080
+
+DAGs: `fleet_daily_pipeline` (daily: wait for files, quality gate, branch, publish report or quality
+alert) and `kafka_lag_monitor` (every 5 minutes, alert if the lag of `alerts-notifier` is above the
+threshold). The batch tasks of `fleet_daily_pipeline` currently call the stand-ins in
+`airflow_dags/stubs/`; the real Spark jobs are the ones in `spark_jobs/` (same `--date` argument).
+
+## Failure experiments (part E)
+Hypotheses and observations: `report/part_E.md`. Raw outputs: `report/screenshots/`.
+Integrity checks used during the experiments:
+
+    scripts/count_outputs.sh                 # Parquet rows / distinct event_id, alerts, DLQ
+    python3 scripts/check_gaps.py RUNID      # missing sequence numbers for one simulator run
+
+---
+
+## Provided material (from the subject)
 
 Read the subject (`sujet_projet_final.pdf`, one level up) first. This folder contains only what
 the subject says is provided: a Kafka broker, the topic-creation script and the telemetry
