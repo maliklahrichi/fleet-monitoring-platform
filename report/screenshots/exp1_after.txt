@@ -1,0 +1,3 @@
+parquet rows: 12929  distinct event_id: 12929  files: 3306
+alerts total: 414  distinct alert_id: 414
+dlq messages: 155

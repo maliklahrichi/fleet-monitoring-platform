@@ -1,0 +1,12 @@
+21:52:13
+run 1181e8e9: sequence 1..19600, 19040 in Parquet, 560 missing (2.9 %), longest hole: 2
+21:52:47
+run 1181e8e9: sequence 1..19600, 19040 in Parquet, 560 missing (2.9 %), longest hole: 2
+21:53:21
+run 1181e8e9: sequence 1..19600, 19040 in Parquet, 560 missing (2.9 %), longest hole: 2
+21:53:55
+run 1181e8e9: sequence 1..19600, 19040 in Parquet, 560 missing (2.9 %), longest hole: 2
+21:54:30
+run 1181e8e9: sequence 1..19600, 19040 in Parquet, 560 missing (2.9 %), longest hole: 2
+21:55:04
+run 1181e8e9: sequence 1..19600, 19040 in Parquet, 560 missing (2.9 %), longest hole: 2

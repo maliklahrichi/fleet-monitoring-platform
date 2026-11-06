@@ -1,0 +1,3 @@
+parquet rows: 38713  distinct event_id: 38713  files: 9901
+alerts total: 1171  distinct alert_id: 1171
+dlq messages: 431
